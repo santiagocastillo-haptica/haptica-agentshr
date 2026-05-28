@@ -404,9 +404,123 @@
     border-radius: 8px;
     font-size: 13px;
   }
+
+  /* API key modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(26,26,24,0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+
+  .modal-overlay.hidden { display: none; }
+
+  .modal {
+    background: white;
+    border-radius: 16px;
+    padding: 32px;
+    width: 420px;
+    max-width: calc(100vw - 40px);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  }
+
+  .modal-logo {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    color: var(--negro);
+    margin-bottom: 4px;
+  }
+
+  .modal-logo span { color: var(--naranja); }
+
+  .modal h3 {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    font-weight: 400;
+    color: var(--negro);
+    margin: 16px 0 6px;
+  }
+
+  .modal p {
+    font-size: 13px;
+    color: var(--gris-medio);
+    line-height: 1.6;
+    margin-bottom: 20px;
+  }
+
+  .modal input {
+    width: 100%;
+    border: 1.5px solid var(--gris-claro);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--negro);
+    outline: none;
+    transition: border-color 0.15s;
+    margin-bottom: 12px;
+  }
+
+  .modal input:focus { border-color: var(--naranja); }
+
+  .modal-btn {
+    width: 100%;
+    background: var(--negro);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 11px;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .modal-btn:hover { background: var(--naranja); }
+
+  .modal-note {
+    font-size: 11px;
+    color: var(--gris-medio);
+    text-align: center;
+    margin-top: 12px;
+  }
+
+  /* key indicator in header */
+  .key-btn {
+    background: none;
+    border: 1px solid var(--gris-claro);
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 11px;
+    color: var(--gris-medio);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: all 0.15s;
+    margin-right: 8px;
+  }
+
+  .key-btn:hover { border-color: var(--naranja); color: var(--naranja); }
+  .key-btn.configured { color: #2d9e5f; border-color: #b7e4cb; background: #f0faf4; }
 </style>
 </head>
 <body>
+
+<!-- API Key Modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-logo">Háp<span>tica</span></div>
+    <h3>Configura tu API key</h3>
+    <p>Para usar el sistema necesitas una API key de Anthropic. Se guarda solo en tu navegador y nunca se sube a ningún servidor.</p>
+    <input type="password" id="api-key-input" placeholder="sk-ant-..." autocomplete="off" />
+    <button class="modal-btn" onclick="saveApiKey()">Guardar y continuar</button>
+    <div class="modal-note">Solo para líderes de Háptica — uso interno</div>
+  </div>
+</div>
 
 <aside class="sidebar">
   <div class="sidebar-header">
@@ -423,6 +537,7 @@
       <div class="chat-agent-name" id="header-name">Orquestador de People</div>
       <div class="chat-agent-desc" id="header-desc">Clasifica tu solicitud y activa el agente correcto</div>
     </div>
+    <button class="key-btn" id="key-btn" onclick="openKeyModal()">API key</button>
     <div class="model-badge">Claude Sonnet 4.6</div>
   </div>
 
@@ -482,6 +597,43 @@ const AGENTS = [
 let activeAgent = AGENTS[0];
 let messages = [];
 let isLoading = false;
+
+function getApiKey() {
+  return localStorage.getItem('haptica_api_key') || '';
+}
+
+function saveApiKey() {
+  const val = document.getElementById('api-key-input').value.trim();
+  if (!val.startsWith('sk-ant-')) {
+    document.getElementById('api-key-input').style.borderColor = 'var(--naranja)';
+    document.getElementById('api-key-input').placeholder = 'Debe comenzar con sk-ant-...';
+    return;
+  }
+  localStorage.setItem('haptica_api_key', val);
+  document.getElementById('modal-overlay').classList.add('hidden');
+  updateKeyBtn();
+}
+
+function openKeyModal() {
+  const existing = getApiKey();
+  if (existing) document.getElementById('api-key-input').value = existing;
+  document.getElementById('modal-overlay').classList.remove('hidden');
+}
+
+function updateKeyBtn() {
+  const btn = document.getElementById('key-btn');
+  if (getApiKey()) {
+    btn.textContent = 'API key ✓';
+    btn.classList.add('configured');
+  } else {
+    btn.textContent = 'API key';
+    btn.classList.remove('configured');
+  }
+}
+
+document.getElementById('api-key-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') saveApiKey();
+});
 
 const SYSTEM_PROMPT = `Eres el sistema interno de People de Háptica, una consultora boutique de diseño de servicios, Legal Service Design e innovación organizacional.
 
@@ -656,10 +808,23 @@ async function sendMessage() {
     ? SYSTEM_PROMPT + '\n\nCONTEXTO DE SESIÓN: ' + agentContext
     : SYSTEM_PROMPT;
 
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    removeTyping();
+    openKeyModal();
+    isLoading = false;
+    return;
+  }
+
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1500,
@@ -708,6 +873,8 @@ textarea.addEventListener('keydown', (e) => {
 });
 
 renderAgents();
+updateKeyBtn();
+if (!getApiKey()) openKeyModal();
 </script>
 </body>
 </html>
